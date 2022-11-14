@@ -33,6 +33,7 @@
     <string name="welcome">Welcome</string>
     <string name="err_enter_title">Please enter title</string>
     <string name="err_select_location">Please select location</string>
+    <string name="ok">OK</string>
 
     <!-- Error strings -->
     <string name="geofence_unknown_error">Unknown error: the Geofence service is not available now.</string>
@@ -40,4 +41,20 @@
     <string name="geofence_too_many_geofences">Your app has registered too many geofences.</string>
     <string name="geofence_too_many_pending_intents">You have provided too many PendingIntents to the addGeofences() call.</string>
     <string name="error_adding_geofence">Error Happened, Can\'t Add Geofence</string>
+
+    <!-- Auth strings -->
+    <string name="login_failed">Failed to login. Try again.</string>
+    <string name="login_network_error">Failed to login. Network error happened.</string>
+    <string name="login_canceled">You need to login to be able to create reminder</string>
+
+    <!-- permission rationale-->
+    <string name="geofence_permission_rationale_title">We need the background location permission</string>
+    <string name="geofence_permission_rationale_message">The background location permission is used to remind you at a specific location</string>
+
+    <!-- Location strings -->
+    <string name="pick_location">You need to pick a location</string>
+    <string name="missing_data_error">Missing Data.</string>
+    <string name="location_granted">Location permission granted</string>
+    <string name="location_denied">Location permission denied</string>
+
 </resources>
