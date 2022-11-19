@@ -8,6 +8,8 @@ import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.IdlingRegistry
 import androidx.test.espresso.action.ViewActions
 import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.RootMatchers.withDecorView
 import androidx.test.espresso.matcher.ViewMatchers.*
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,7 +22,10 @@ import com.udacity.project4.locationreminders.reminderslist.RemindersListViewMod
 import com.udacity.project4.locationreminders.savereminder.SaveReminderViewModel
 import com.udacity.project4.util.DataBindingIdlingResource
 import com.udacity.project4.util.monitorActivity
+import com.udacity.project4.utils.EspressoIdlingResource
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import org.hamcrest.core.IsNot.not
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -77,14 +82,22 @@ class RemindersActivityTest : KoinTest {
             decorView = activity.window.decorView
         }
 
-    }    @Before
+    }
+
+    @Before
     fun registerIdlingResource() {
-        IdlingRegistry.getInstance().register(dataBindingIdlingResource)
+        IdlingRegistry.getInstance().apply {
+            register(EspressoIdlingResource.countingIdlingResource)
+            register(dataBindingIdlingResource)
+        }
     }
 
     @After
     fun unregisterIdlingResource() {
-        IdlingRegistry.getInstance().unregister(dataBindingIdlingResource)
+        IdlingRegistry.getInstance().apply {
+            unregister(EspressoIdlingResource.countingIdlingResource)
+            unregister(dataBindingIdlingResource)
+        }
     }
 
     @Test
@@ -96,8 +109,13 @@ class RemindersActivityTest : KoinTest {
 
         onView(withId(R.id.reminderTitle)).perform(ViewActions.replaceText("Title ABC"))
         onView(withId(R.id.reminderDescription)).perform(ViewActions.replaceText("Desc ABC"))
-        onView(withId(R.id.selectLocation)).perform(click())
+        onView(withId(R.id.selectedLocation)).perform(click())
+
+        onView(withId(R.id.map)).perform(click())
+
+
         onView(withId(R.id.btn_save)).perform(click())
+
 
         onView(withId(R.id.saveReminder)).perform(click())
 
@@ -106,7 +124,9 @@ class RemindersActivityTest : KoinTest {
         // which means they may not be shown immediately but shown when the main thread is idle,
         // so it may cause the test to be flaky.
 
-//        onView(withText(R.string.reminder_saved)).inRoot(withDecorView(not(decorView))).check(matches(isDisplayed()))
+
+        onView(withText(R.string.reminder_saved)).inRoot(withDecorView(not(decorView)))
+            .check(matches(isDisplayed()))
 
         activityScenario.close()
     }

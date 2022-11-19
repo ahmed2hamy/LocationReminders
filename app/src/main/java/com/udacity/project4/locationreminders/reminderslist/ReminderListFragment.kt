@@ -1,99 +1,103 @@
 package com.udacity.project4.locationreminders.reminderslist
 
-import android.content.Intent
 import android.os.Bundle
 import android.view.*
+import androidx.core.view.MenuHost
+import androidx.core.view.MenuProvider
 import androidx.databinding.DataBindingUtil
+import androidx.lifecycle.Lifecycle
 import com.firebase.ui.auth.AuthUI
 import com.udacity.project4.R
-import com.udacity.project4.authentication.AuthenticationActivity
 import com.udacity.project4.base.BaseFragment
 import com.udacity.project4.base.NavigationCommand
 import com.udacity.project4.databinding.FragmentRemindersBinding
+import com.udacity.project4.utils.Navigator
 import com.udacity.project4.utils.setDisplayHomeAsUpEnabled
 import com.udacity.project4.utils.setTitle
 import com.udacity.project4.utils.setup
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
-class ReminderListFragment : BaseFragment() {
-    //use Koin to retrieve the ViewModel instance
-    override val viewModel: RemindersListViewModel by viewModel()
-    private lateinit var binding: FragmentRemindersBinding
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
-        binding =
-            DataBindingUtil.inflate(
-                inflater,
-                R.layout.fragment_reminders, container, false
-            )
-        binding.viewModel = viewModel
+class ReminderListFragment : BaseFragment(), MenuProvider {
 
-        setHasOptionsMenu(true)
+    // Use Koin to retrieve the ViewModel instance.
+    override val _viewModel: RemindersListViewModel by viewModel()
+    private lateinit var binding: FragmentRemindersBinding
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+        binding = DataBindingUtil.inflate(
+            inflater,
+            R.layout.fragment_reminders,
+            container,
+            false
+        )
+        binding.lifecycleOwner = this
+        binding.viewModel = _viewModel
+
+        val menuHost: MenuHost = requireActivity()
+        menuHost.addMenuProvider(this, viewLifecycleOwner, Lifecycle.State.RESUMED)
+
         setDisplayHomeAsUpEnabled(false)
         setTitle(getString(R.string.app_name))
 
-        binding.refreshLayout.setOnRefreshListener { viewModel.loadReminders() }
+        setupRecyclerView()
+        initListeners()
 
         return binding.root
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        binding.lifecycleOwner = this
-        setupRecyclerView()
+    private fun setupRecyclerView() {
+        val adapter = RemindersListAdapter {
+            navigateToAddReminder(it)
+        }
+
+        // Setup the recycler view using the extension function.
+        binding.remindersRecyclerView.setup(adapter)
+    }
+
+    private fun initListeners() {
         binding.addReminderFAB.setOnClickListener {
             navigateToAddReminder()
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        //load the reminders list on the ui
-        viewModel.loadReminders()
-    }
-
-    private fun navigateToAddReminder() {
-        //use the navigationCommand live data to navigate between the fragments
-        viewModel.navigationCommand.postValue(
+    private fun navigateToAddReminder(reminderData: ReminderDataItem? = null) {
+        // Use the navigationCommand live data to navigate between the fragments.
+        _viewModel.navigationCommand.postValue(
             NavigationCommand.To(
-                ReminderListFragmentDirections.toSaveReminder()
+                ReminderListFragmentDirections.toSaveReminder(reminderData)
             )
         )
     }
 
-    private fun setupRecyclerView() {
-        val adapter = RemindersListAdapter {
-        }
-
-//        setup the recycler view using the extension function
-        binding.reminderssRecyclerView.setup(adapter)
+    override fun onResume() {
+        super.onResume()
+        // Load the reminders list on the UI.
+        _viewModel.loadReminders()
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
-            R.id.logout -> {
-                AuthUI.getInstance().signOut(requireContext()).addOnCompleteListener {
-                    if (it.isSuccessful) {
-                        val intent = Intent(requireContext(), AuthenticationActivity::class.java)
-                        intent.addFlags(
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                                    or Intent.FLAG_ACTIVITY_NEW_TASK
-                        )
-                        startActivity(intent)
-                    }
-                }
-            }
-        }
-        return super.onOptionsItemSelected(item)
-
-    }
-
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
-        super.onCreateOptionsMenu(menu, inflater)
-//        display logout as menu item
+    override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.main_menu, menu)
     }
 
+    override fun onMenuItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.logout -> {
+                AuthUI.getInstance()
+                    .signOut(requireContext())
+                    .addOnCompleteListener {
+                        if (it.isSuccessful) {
+                            Navigator.navigateToAuthenticationActivity(requireActivity())
+                        } else {
+                            showSnackBar(getString(R.string.error_failed_to_log_out))
+                        }
+                    }
+                return true
+            }
+        }
+        return false
+    }
 }

@@ -1,19 +1,17 @@
 package com.udacity.project4.authentication
 
 import android.app.Activity
-import android.content.Intent
-import android.content.Intent.*
 import android.os.Bundle
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.appcompat.app.AppCompatActivity
-import androidx.databinding.DataBindingUtil
 import com.firebase.ui.auth.AuthUI
 import com.firebase.ui.auth.IdpResponse
+import com.google.android.material.snackbar.Snackbar
 import com.google.firebase.auth.FirebaseAuth
 import com.udacity.project4.R
-import com.udacity.project4.databinding.ActivityAuthenticationBinding
-import com.udacity.project4.locationreminders.RemindersActivity
-import timber.log.Timber
-
+import com.udacity.project4.utils.Navigator
+import kotlinx.android.synthetic.main.activity_authentication.*
 
 /**
  * This class should be the starting point of the app, It asks the users to sign in / register, and redirects the
@@ -21,57 +19,55 @@ import timber.log.Timber
  */
 class AuthenticationActivity : AppCompatActivity() {
 
+    private val auth = FirebaseAuth.getInstance()
+
+    private val loginResultLauncher =
+        registerForActivityResult(StartActivityForResult()) { result: ActivityResult ->
+            val idpResponse = IdpResponse.fromResultIntent(result.data)
+
+            if (result.resultCode == Activity.RESULT_OK) {
+                Navigator.navigateToRemindersActivity(this)
+            } else {
+                if (idpResponse == null) {
+                    showSnackBar("Login cancelled")
+                } else {
+                    showSnackBar(
+                        idpResponse.error?.localizedMessage
+                            ?: "An unknown error occurred while trying to log in."
+                    )
+                }
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val binding: ActivityAuthenticationBinding =
-            DataBindingUtil.setContentView(this, R.layout.activity_authentication)
-
-        binding.btnLogin.setOnClickListener {
+        if (auth.currentUser != null) {
+            Navigator.navigateToRemindersActivity(this)
+        } else {
+            setContentView(R.layout.activity_authentication)
             launchSignInFlow()
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == SIGN_IN_REQUEST_CODE) {
-            val response = IdpResponse.fromResultIntent(data)
-            if (resultCode == Activity.RESULT_OK) {
-                val user = FirebaseAuth.getInstance().currentUser
-                val intent = Intent(this, RemindersActivity::class.java).apply {
-                    putExtra("USER_NAME", user?.displayName)
-                }
-                intent.addFlags(
-                    FLAG_ACTIVITY_CLEAR_TOP
-                            or FLAG_ACTIVITY_CLEAR_TASK
-                            or FLAG_ACTIVITY_NEW_TASK
-                )
-                startActivity(intent)
-
-            } else {
-                Timber.e("Sign in unsuccessful ${response?.error?.errorCode}")
-            }
-        }
-    }
-
     private fun launchSignInFlow() {
-        val providers = arrayListOf(
+        val providers = listOf(
             AuthUI.IdpConfig.EmailBuilder().build(),
             AuthUI.IdpConfig.GoogleBuilder().build()
         )
 
-        startActivityForResult(
-            AuthUI.getInstance()
-                .createSignInIntentBuilder()
-                .setIsSmartLockEnabled(false) // to prevent smart lock error
-                .setAvailableProviders(providers)
-                .build(),
-            SIGN_IN_REQUEST_CODE
-        )
+        btn_login.setOnClickListener {
+            loginResultLauncher.launch(
+                AuthUI.getInstance()
+                    .createSignInIntentBuilder()
+                    .setIsSmartLockEnabled(false)
+                    .setAvailableProviders(providers)
+                    .setLogo(R.drawable.map)
+                    .build()
+            )
+        }
     }
 
-    companion object {
-        const val SIGN_IN_REQUEST_CODE = 1001
+    private fun showSnackBar(message: String) {
+        Snackbar.make(findViewById(android.R.id.content), message, Snackbar.LENGTH_LONG).show()
     }
 }

@@ -1,48 +1,46 @@
 package com.udacity.project4.locationreminders.savereminder.selectreminderlocation
+
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.pm.PackageManager
-import android.graphics.Color
+import android.content.Intent
 import android.os.Bundle
 import android.view.*
-import androidx.core.content.ContextCompat
+import androidx.core.view.MenuHost
+import androidx.core.view.MenuProvider
 import androidx.databinding.DataBindingUtil
-import androidx.navigation.fragment.findNavController
-import com.google.android.gms.location.LocationServices
+import androidx.lifecycle.Lifecycle
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
-import com.google.android.gms.maps.model.*
 import com.udacity.project4.R
 import com.udacity.project4.base.BaseFragment
+import com.udacity.project4.base.NavigationCommand
 import com.udacity.project4.databinding.FragmentSelectLocationBinding
 import com.udacity.project4.locationreminders.savereminder.SaveReminderViewModel
+import com.udacity.project4.utils.LocationGetter
+import com.udacity.project4.utils.PermissionUtils
 import com.udacity.project4.utils.setDisplayHomeAsUpEnabled
+import com.udacity.project4.utils.truncate
 import org.koin.android.ext.android.inject
-import java.util.*
+import android.content.res.Resources
+import android.graphics.Color
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import com.google.android.gms.maps.model.*
+import com.google.android.material.snackbar.Snackbar
+import com.udacity.project4.BuildConfig
+import com.udacity.project4.locationreminders.geofence.GeofencingConstants
+import timber.log.Timber
 
-class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
 
-    companion object {
-        private const val TAG = "SaveReminderFragment"
+class SelectLocationFragment : BaseFragment(), OnMapReadyCallback, MenuProvider {
 
-        private const val FINE_LOCATION_PERMISSION_REQUEST_CODE = 1
-        private const val TURN_DEVICE_LOCATION_ON_REQUEST_CODE = 29
-
-        private val DEFAULT_LAT_LNG = LatLng(-34.0, 151.0)  // Sydney
-    }
-
-    enum class MapZoomLevel(val level: Float) {
-        World(1f),
-        Landmass(5f),
-        City(10f),
-        Streets(15f),
-        Buildings(20f)
-    }
-
-    override val viewModel: SaveReminderViewModel by inject()
+    override val _viewModel: SaveReminderViewModel by inject()
     private lateinit var binding: FragmentSelectLocationBinding
+
+    private lateinit var locationGetter: LocationGetter
 
     private lateinit var map: GoogleMap
     private var marker: Marker? = null
@@ -50,43 +48,40 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
-        binding =
-            DataBindingUtil.inflate(inflater, R.layout.fragment_select_location, container, false)
-
-        binding.viewModel = viewModel
+        binding = DataBindingUtil.inflate(
+            inflater, R.layout.fragment_select_location, container, false
+        )
         binding.lifecycleOwner = this
+        binding.viewModel = _viewModel
 
-        setHasOptionsMenu(true)
+        val menuHost: MenuHost = requireActivity()
+        menuHost.addMenuProvider(this, viewLifecycleOwner, Lifecycle.State.RESUMED)
+
         setDisplayHomeAsUpEnabled(true)
 
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        locationGetter = LocationGetter(requireContext())
+
         val mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
 
+        checkPermissions()
+
         binding.btnSave.setOnClickListener {
-            onLocationSelected()
+            if (marker == null) {
+                showSnackBar(getString(R.string.select_poi))
+            } else {
+                _viewModel.navigationCommand.postValue(NavigationCommand.Back)
+            }
         }
 
         return binding.root
     }
 
-    private fun onLocationSelected() {
-
-        marker?.let {
-            viewModel.reminderSelectedLocationStr.value = it.title
-            viewModel.latitude.value = it.position.latitude
-            viewModel.longitude.value = it.position.longitude
-        }
-
-        findNavController().popBackStack()
-    }
-
-
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
+    override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.map_options, menu)
     }
 
-    override fun onOptionsItemSelected(item: MenuItem) = when (item.itemId) {
+    override fun onMenuItemSelected(item: MenuItem) = when (item.itemId) {
         R.id.normal_map -> {
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
             true
@@ -103,140 +98,203 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback {
             map.mapType = GoogleMap.MAP_TYPE_TERRAIN
             true
         }
-        else -> super.onOptionsItemSelected(item)
+        else -> false
     }
 
-    override fun onMapReady(googleMap: GoogleMap) {
-        map = googleMap
-
-        // map marker
-        map.setOnMapLongClickListener { latLng ->
-            addMapMarker(latLng)
-            marker!!.showInfoWindow()
-        }
-
-        // poi marker
-        map.setOnPoiClickListener { poi ->
-            addPoiMarker(poi)
-            marker!!.showInfoWindow()
-        }
-
-        // map style
-        map.setMapStyle(MapStyleOptions.loadRawResourceStyle(
-            requireContext(),
-            R.raw.map_style))
-
-        if (ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-
-            enableMapMyLocation()
-
+    private fun checkPermissions() {
+        if (isPermissionApproved()) {
+            checkDeviceLocationSettings()
         } else {
-
-            requestPermissions(
-                arrayOf<String>(Manifest.permission.ACCESS_FINE_LOCATION),
-                FINE_LOCATION_PERMISSION_REQUEST_CODE)
+            requestLocationPermission()
         }
     }
 
-    private fun addPoiMarker(poi: PointOfInterest) {
-        marker?.remove()
-        map.clear()
-        marker = map.addMarker(MarkerOptions()
-            .position(poi.latLng)
-            .title(poi.name)
-            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE))
+    private fun isPermissionApproved(): Boolean {
+        return PermissionUtils.isPermissionGranted(
+            requireContext(), requiredPermission
         )
-
-        val circleOptions = CircleOptions().apply {
-            center(poi.latLng)
-            radius(100.0)
-            strokeColor(Color.argb(255, 255, 99, 105))
-            strokeWidth(2f)
-            fillColor(Color.argb(60, 255, 99, 105))
-
-        }
-        map.addCircle(circleOptions)
     }
 
-    private fun addMapMarker(latLng: LatLng) {
-        val snippet = String.format(
-            Locale.getDefault(),
-            "Lat: %1$.5f, Long: %2$.5f",
-            latLng.latitude,
-            latLng.longitude
-        )
+    private fun checkDeviceLocationSettings(resolve: Boolean = true) {
 
-        marker?.remove()
-        map.clear()
+        locationGetter.checkDeviceLocationSettings(requireActivity(),
+            REQUEST_TURN_DEVICE_LOCATION_ON,
+            resolve,
+            {
+                enableMyLocation()
 
-        marker = map.addMarker(MarkerOptions()
-            .position(latLng)
-            .title(getString(R.string.dropped_pin))
-            .snippet(snippet)
-            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-        )
-
-        val circleOptions = CircleOptions().apply {
-            center(latLng)
-            radius(100.0)
-            strokeColor(Color.argb(255, 255, 99, 105))
-            strokeWidth(2f)
-            fillColor(Color.argb(60, 255, 99, 105))
-
-        }
-        map.addCircle(circleOptions)
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun enableMapMyLocation() {
-        map.isMyLocationEnabled = true
-        addLastLocationCallback()
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun addLastLocationCallback() {
-
-        val fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(requireContext())
-        val lastLocationTask = fusedLocationProviderClient.lastLocation
-
-        lastLocationTask.addOnCompleteListener(requireActivity()) { task ->
-
-            if(task.isSuccessful) {
-                val taskResult = task.result
-                taskResult?.run {
-
-                    val latLng = LatLng(latitude, longitude)
-                    map.moveCamera(
+                locationGetter.getLastLocation {
+                    map.animateCamera(
                         CameraUpdateFactory.newLatLngZoom(
-                            latLng,
-                            MapZoomLevel.Streets.level
+                            LatLng(it.latitude, it.longitude), 15.0f
                         )
                     )
 
-                    addMapMarker(latLng)
+                    addMarkerCircle(LatLng(it.latitude, it.longitude))
+                }
+            },
+            {
+                showSnackBar(
+                    getString(R.string.location_required_error),
+                    Snackbar.LENGTH_INDEFINITE,
+                    android.R.string.ok
+                ) {
+                    checkDeviceLocationSettings()
+                }
+            })
+
+
+    }
+
+    private fun requestLocationPermission() {
+        if (isPermissionApproved()) return
+
+        Timber.tag(TAG).d("Requesting location permission")
+
+        PermissionUtils.requestPermission(
+            this, requiredPermission
+        ) { isGranted ->
+            if (isGranted) {
+                checkDeviceLocationSettings()
+            } else {
+                // Permission denied.
+                showSnackBar(
+                    getString(R.string.permission_denied_explanation),
+                    Snackbar.LENGTH_INDEFINITE,
+                    R.string.settings,
+                ) {
+                    // Displays App settings screen.
+                    startActivity(Intent().apply {
+                        action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                        data = Uri.fromParts("package", BuildConfig.APPLICATION_ID, null)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    })
                 }
             }
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray) {
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_TURN_DEVICE_LOCATION_ON) {
+            checkDeviceLocationSettings(false)
+        }
+    }
 
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    @SuppressLint("MissingPermission")
+    private fun enableMyLocation() {
+        if (locationGetter.isLocationEnabled()) {
+            map.isMyLocationEnabled = true
+            map.uiSettings.isMyLocationButtonEnabled = true
+        }
 
-        if (requestCode == FINE_LOCATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        map.setOnMyLocationButtonClickListener {
+            checkDeviceLocationSettings()
+            true
+        }
+    }
 
-                enableMapMyLocation()
+    override fun onMapReady(googleMap: GoogleMap) {
+        map = googleMap
+        setMapStyle()
+        initMapView()
 
-            } else {
-                viewModel.showSnackBarInt.value = R.string.permission_denied_explanation
+
+        map.setOnPoiClickListener {
+            marker?.remove()
+            map.clear()
+
+            val locationSnippet = it.name
+            _viewModel.updateSelectedLocation(it.latLng, locationSnippet, it)
+
+            marker = map.addMarker(
+                MarkerOptions().position(it.latLng).title(it.name).snippet(locationSnippet)
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE))
+            )
+
+            addMarkerCircle(it.latLng)
+
+            marker?.showInfoWindow()
+        }
+
+        map.setOnMapClickListener {
+            marker?.remove()
+            map.clear()
+
+            val locationSnippet = "${it.latitude.truncate(6)}, ${it.longitude.truncate(6)}"
+            _viewModel.updateSelectedLocation(it, locationSnippet)
+
+            marker = map.addMarker(
+                MarkerOptions().position(it).title(getString(R.string.dropped_pin))
+                    .snippet(locationSnippet)
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+            )
+
+            addMarkerCircle(it)
+            marker?.showInfoWindow()
+        }
+    }
+
+    private fun addMarkerCircle(center: LatLng) {
+        val circleOptions = CircleOptions().apply {
+            center(center)
+            radius(GeofencingConstants.GEOFENCE_RADIUS_IN_METERS)
+            strokeColor(Color.argb(255, 255, 99, 105))
+            strokeWidth(2f)
+            fillColor(Color.argb(60, 255, 99, 105))
+
+        }
+        map.addCircle(circleOptions)
+    }
+
+    private fun initMapView() {
+        val latitude = _viewModel.latitude.value
+        val longitude = _viewModel.longitude.value
+        val locationSnippet = _viewModel.reminderSelectedLocationStr.value
+
+        if (latitude != null && longitude != null && locationSnippet != null) {
+            val latLng = LatLng(latitude, longitude)
+            marker = map.addMarker(
+                MarkerOptions().position(latLng).title(getString(R.string.dropped_pin))
+                    .snippet(locationSnippet)
+            )
+            map.moveCamera(
+                CameraUpdateFactory.newLatLngZoom(latLng, 15.0f)
+            )
+        } else if (PermissionUtils.arePermissionsGranted(
+                requireContext(), arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            )
+        ) {
+            locationGetter.getLastLocation {
+                map.moveCamera(
+                    CameraUpdateFactory.newLatLngZoom(LatLng(it.latitude, it.longitude), 15.0f)
+                )
             }
+        }
+    }
+
+    private fun setMapStyle() {
+        try {
+            val success = map.setMapStyle(
+                MapStyleOptions.loadRawResourceStyle(requireContext(), R.raw.map_style)
+            )
+
+            if (!success) {
+                Timber.tag(TAG).e("Style parsing failed.")
+            }
+        } catch (e: Resources.NotFoundException) {
+            Timber.tag(TAG).e(e, "Can't find style. Error: ")
+        }
+    }
+
+
+    companion object {
+        private val TAG = SelectLocationFragment::class.java.simpleName
+        private const val REQUEST_TURN_DEVICE_LOCATION_ON = 29
+
+        val requiredPermission = when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            else -> Manifest.permission.ACCESS_FINE_LOCATION
         }
     }
 }
