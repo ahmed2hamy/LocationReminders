@@ -1,12 +1,9 @@
 package com.udacity.project4.utils
 
-import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 
@@ -24,15 +21,6 @@ object PermissionUtils {
         }
     }
 
-    fun arePermissionsGranted(context: Context, permissions: Array<String>): Boolean {
-        permissions.forEach { permission ->
-            if (!isPermissionGranted(context, permission)) {
-                return false
-            }
-        }
-        return true
-    }
-
     fun requestPermission(
         fragment: Fragment,
         permission: String,
@@ -41,23 +29,5 @@ object PermissionUtils {
         fragment.registerForActivityResult(RequestPermission()) {
             onResultAction(it)
         }.launch(permission)
-    }
-
-    fun requestPermissions(
-        fragment: Fragment,
-        permissions: Array<String>,
-        onResultAction: (Map<String, Boolean>) -> Unit
-    ) {
-        fragment.registerForActivityResult(RequestMultiplePermissions()) {
-            onResultAction(it)
-        }.launch(permissions)
-    }
-
-    fun requestPermissionss(
-        activity: Activity,
-        permissions: Array<String>,
-        requestCode: Int
-    ) {
-       ActivityCompat.requestPermissions(activity, permissions, requestCode)
     }
 }

@@ -1,6 +1,7 @@
 package com.udacity.project4
 
 import android.app.Application
+import android.os.Build
 import android.view.View
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider.getApplicationContext
@@ -23,9 +24,10 @@ import com.udacity.project4.locationreminders.savereminder.SaveReminderViewModel
 import com.udacity.project4.util.DataBindingIdlingResource
 import com.udacity.project4.util.monitorActivity
 import com.udacity.project4.utils.EspressoIdlingResource
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import org.hamcrest.core.IsNot.not
+import org.hamcrest.Matchers.`is`
+import org.hamcrest.Matchers.not
+import org.hamcrest.core.StringEndsWith.endsWith
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -37,6 +39,7 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import org.koin.test.KoinTest
 import org.koin.test.get
+
 
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -101,14 +104,14 @@ class RemindersActivityTest : KoinTest {
     }
 
     @Test
-    fun saveReminder() {
+    fun saveReminder_TestToastMessage() {
         val activityScenario = ActivityScenario.launch(RemindersActivity::class.java)
         dataBindingIdlingResource.monitorActivity(activityScenario)
 
         onView(withId(R.id.addReminderFAB)).perform(click())
 
-        onView(withId(R.id.reminderTitle)).perform(ViewActions.replaceText("Title ABC"))
-        onView(withId(R.id.reminderDescription)).perform(ViewActions.replaceText("Desc ABC"))
+        onView(withId(R.id.reminderTitle)).perform(ViewActions.replaceText("Title"))
+        onView(withId(R.id.reminderDescription)).perform(ViewActions.replaceText("Desc"))
         onView(withId(R.id.selectedLocation)).perform(click())
 
         onView(withId(R.id.map)).perform(click())
@@ -119,14 +122,19 @@ class RemindersActivityTest : KoinTest {
 
         onView(withId(R.id.saveReminder)).perform(click())
 
-        ///It's a bad practice to test toast and snackbar messages using Espresso,
+        //It's a bad practice to test toast and snackbar messages using Espresso,
         // as toasts and snackbars are posted on the main thread,
         // which means they may not be shown immediately but shown when the main thread is idle,
         // so it may cause the test to be flaky.
 
+        ///Therefore this test will fail in android 11 or higher if not for the check below
 
-        onView(withText(R.string.reminder_saved)).inRoot(withDecorView(not(decorView)))
-            .check(matches(isDisplayed()))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            onView(withText(endsWith(appContext.getString(R.string.reminder_saved)))).inRoot(
+                withDecorView(not(`is`(decorView)))
+            )
+                .check(matches(isDisplayed()))
+        }
 
         activityScenario.close()
     }

@@ -1,5 +1,6 @@
 package com.udacity.project4.locationreminders.savereminder
 
+import android.content.Context
 import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -48,6 +49,7 @@ class SaveReminderViewModelTest {
 
     @Test
     fun check_loading() {
+        val app = ApplicationProvider.getApplicationContext<Context>()
 
         val reminder = ReminderDataItem("title", "description", "Trinity Church", 40.709054356523396, -74.01153804364777)
 
@@ -56,7 +58,7 @@ class SaveReminderViewModelTest {
         assertThat(saveReminderViewModel.showLoading.getOrAwaitValue(), `is`(true))
         mainCoroutineRule.resumeDispatcher()
         assertThat(saveReminderViewModel.showLoading.getOrAwaitValue(),`is`(false))
-        assertThat(saveReminderViewModel.showToast.getOrAwaitValue(),`is`("Reminder Saved !"))
+        assertThat(saveReminderViewModel.showToast.getOrAwaitValue(),`is`(app.getString(R.string.reminder_saved)))
     }
 
     @Test

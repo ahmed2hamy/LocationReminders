@@ -40,7 +40,7 @@ class RemindersListViewModel(
                             reminder.id
                         )
                     })
-                    remindersList.value = dataList.reversed()
+                    remindersList.value = dataList
                 }
                 is Result.Error ->
                     showSnackBar.value = result.message

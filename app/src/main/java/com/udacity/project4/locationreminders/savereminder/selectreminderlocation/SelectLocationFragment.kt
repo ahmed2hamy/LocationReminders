@@ -3,35 +3,36 @@ package com.udacity.project4.locationreminders.savereminder.selectreminderlocati
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.res.Resources
+import android.graphics.Color
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.*
 import androidx.core.view.MenuHost
 import androidx.core.view.MenuProvider
 import androidx.databinding.DataBindingUtil
+import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.Lifecycle
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.*
+import com.google.android.material.snackbar.Snackbar
+import com.udacity.project4.BuildConfig
 import com.udacity.project4.R
 import com.udacity.project4.base.BaseFragment
 import com.udacity.project4.base.NavigationCommand
 import com.udacity.project4.databinding.FragmentSelectLocationBinding
+import com.udacity.project4.locationreminders.geofence.GeofencingConstants
 import com.udacity.project4.locationreminders.savereminder.SaveReminderViewModel
 import com.udacity.project4.utils.LocationGetter
 import com.udacity.project4.utils.PermissionUtils
 import com.udacity.project4.utils.setDisplayHomeAsUpEnabled
 import com.udacity.project4.utils.truncate
 import org.koin.android.ext.android.inject
-import android.content.res.Resources
-import android.graphics.Color
-import android.net.Uri
-import android.os.Build
-import android.provider.Settings
-import com.google.android.gms.maps.model.*
-import com.google.android.material.snackbar.Snackbar
-import com.udacity.project4.BuildConfig
-import com.udacity.project4.locationreminders.geofence.GeofencingConstants
 import timber.log.Timber
 
 
@@ -77,6 +78,11 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback, MenuProvider 
         return binding.root
     }
 
+    override fun onResume() {
+        super.onResume()
+        requestPermissionsAgain()
+    }
+
     override fun onCreateMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.map_options, menu)
     }
@@ -108,6 +114,17 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback, MenuProvider 
             requestLocationPermission()
         }
     }
+    private fun requestPermissionsAgain() {
+        if (isPermissionApproved()) {
+            checkDeviceLocationSettings()
+        } else {
+            recreateFragment()
+        }
+    }
+
+    private fun recreateFragment() {
+        parentFragmentManager.beginTransaction().detach(this).attach(this).commit()
+    }
 
     private fun isPermissionApproved(): Boolean {
         return PermissionUtils.isPermissionGranted(
@@ -124,6 +141,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback, MenuProvider 
                 enableMyLocation()
 
                 locationGetter.getLastLocation {
+                    map.setPadding(0, 0, 0, 200)
                     map.animateCamera(
                         CameraUpdateFactory.newLatLngZoom(
                             LatLng(it.latitude, it.longitude), 15.0f
@@ -184,6 +202,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback, MenuProvider 
     @SuppressLint("MissingPermission")
     private fun enableMyLocation() {
         if (locationGetter.isLocationEnabled()) {
+            map.uiSettings.isZoomControlsEnabled = true
             map.isMyLocationEnabled = true
             map.uiSettings.isMyLocationButtonEnabled = true
         }
@@ -261,10 +280,7 @@ class SelectLocationFragment : BaseFragment(), OnMapReadyCallback, MenuProvider 
             map.moveCamera(
                 CameraUpdateFactory.newLatLngZoom(latLng, 15.0f)
             )
-        } else if (PermissionUtils.arePermissionsGranted(
-                requireContext(), arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-            )
-        ) {
+        } else if (PermissionUtils.isPermissionGranted(requireContext(), requiredPermission)) {
             locationGetter.getLastLocation {
                 map.moveCamera(
                     CameraUpdateFactory.newLatLngZoom(LatLng(it.latitude, it.longitude), 15.0f)
